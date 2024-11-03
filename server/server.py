@@ -14,8 +14,9 @@ class Server:
         self.server_usersfile_fld_delimiter = ':'
         self.server_rootdir = './users/'
         self.server_ip = socket.gethostbyname('localhost')
+        print("IP: "+self.server_ip)
         # self.server_ip = socket.gethostbyname(socket.gethostname())
-        self.server_port = 5150
+        self.server_port = 1900
         # -------------------------------------------------------------
         self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.server_socket.bind((self.server_ip, self.server_port))

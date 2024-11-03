@@ -10,8 +10,8 @@ from siftprotocols.siftdnl import SiFT_DNL, SiFT_DNL_Error
 
 # ----------- CONFIG -------------
 server_ip = '127.0.0.1' # localhost
-# server_ip = '192.168.x.y'
-server_port = 5150
+# server_ip = '192.168.0.59'
+server_port = 1900
 # --------------------------------
 
 class SiFTShell(cmd.Cmd):
