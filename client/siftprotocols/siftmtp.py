@@ -1,7 +1,9 @@
 #python3
 
+import sys, getopt
 import socket
 import Crypto.Random
+from Crypto.Cipher import AES
 
 class SiFT_MTP_Error(Exception):
 
@@ -46,6 +48,7 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
+		self.statefile = "state.txt"
 
 
 	# parses a message header and returns a dictionary containing the header fields
@@ -144,24 +147,35 @@ class SiFT_MTP:
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
 		
+		# read state file: key, sqn
+		ifile = open(self.statefile, 'rt')
+		line = ifile.readline()
+		enckey = line[len("key: "):len("key: ")+32]
+		enckey = bytes.fromhex(enckey)
+		line = ifile.readline()
+		sqn = line[len("sqn: "):]
+		sqn = int(sqn, base=10)
+		ifile.close()
+
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr_sqn = b'\x00\x00' # TODO: implement sequence numbers
+		msg_hdr_sqn = sqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_hdr_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
-		# build message mac
-		msg_mac = Crypto.Random.get_random_bytes(12) # TODO: implement mac authetication
-
-		# TODO: implement encryption
+		# encrypt payload and get MAC with AES in GCM mode
+		nonce = msg_hdr_sqn + msg_hdr_rnd
+		GSM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
+		GSM.update(msg_hdr)
+		encrypted_payload, msg_mac = GSM.encrypt_and_digest(msg_payload)
 
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-			print('BDY (' + str(len(msg_payload)) + '): ')
-			print(msg_payload.hex())
+			print('BDY (' + str(len(encrypted_payload)) + '): ')
+			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
 			print('------------------------------------------')
@@ -169,7 +183,7 @@ class SiFT_MTP:
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + msg_payload + msg_mac)
+			self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
