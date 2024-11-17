@@ -84,7 +84,16 @@ class SiFT_MTP:
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
 
-		# TODO: implement decryption
+		# read state file: key, sqn
+		ifile = open(self.statefile, 'rt')
+		line = ifile.readline()
+		enckey = line[len("key: "):len("key: ")+32]
+		enckey = bytes.fromhex(enckey)
+		#line = ifile.readline()
+		#sqn = line[len("sqn: "):]
+		#sqn = int(sqn, base=10)
+		ifile.close()
+
 
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
@@ -116,6 +125,21 @@ class SiFT_MTP:
 			msg_mac = self.receive_bytes(self.size_msg_mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
+
+
+		# TODO: implement decryption
+
+		print("Decryption and authentication tag verification is attempted...")
+		nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
+		GCM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
+		GCM.update(msg_hdr)
+		try:
+		    payload = GCM.decrypt_and_verify(msg_body, msg_mac)
+		except Exception as e:
+			print("Error: Operation failed!")
+			print("Processing completed.")
+			sys.exit(1)
+		print("Operation was successful: message is intact, content is decrypted.")
 
 		# DEBUG 
 		if self.DEBUG:
