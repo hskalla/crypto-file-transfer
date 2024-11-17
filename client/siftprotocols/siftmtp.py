@@ -126,15 +126,15 @@ class SiFT_MTP:
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
 
+		# TODO: check sequence number
 
-		# TODO: implement decryption
-
+		# decrypt and verify message
 		print("Decryption and authentication tag verification is attempted...")
 		nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
 		GCM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
 		GCM.update(msg_hdr)
 		try:
-		    payload = GCM.decrypt_and_verify(msg_body, msg_mac)
+		    decrypted_payload = GCM.decrypt_and_verify(msg_body, msg_mac)
 		except Exception as e:
 			print("Error: Operation failed!")
 			print("Processing completed.")
@@ -147,6 +147,8 @@ class SiFT_MTP:
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
 			print('BDY (' + str(len(msg_body)) + '): ')
 			print(msg_body.hex())
+			print('DEC (' + str(len(decrypted_payload)) + '): ')
+			print(decrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
 			print('------------------------------------------')
@@ -154,9 +156,7 @@ class SiFT_MTP:
 
 		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
-		
-		# TODO: implement MAC verification
-		
+				
 		return parsed_msg_hdr['typ'], msg_body
 
 
@@ -188,6 +188,8 @@ class SiFT_MTP:
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_hdr_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
+		# TODO: update sequence number
+
 		# encrypt payload and get MAC with AES in GCM mode
 		nonce = msg_hdr_sqn + msg_hdr_rnd
 		GSM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
@@ -198,7 +200,9 @@ class SiFT_MTP:
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-			print('BDY (' + str(len(encrypted_payload)) + '): ')
+			print('BDY (' + str(len(msg_payload)) + '): ')
+			print(msg_payload.hex())
+			print('ENC (' + str(len(encrypted_payload)) + '): ')
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())

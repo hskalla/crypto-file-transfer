@@ -84,7 +84,16 @@ class SiFT_MTP:
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
 
-		# TODO: implement decryption
+		# read state file: key, sqn
+		ifile = open(self.statefile, 'rt')
+		line = ifile.readline()
+		enckey = line[len("key: "):len("key: ")+32]
+		enckey = bytes.fromhex(enckey)
+		#line = ifile.readline()
+		#sqn = line[len("sqn: "):]
+		#sqn = int(sqn, base=10)
+		ifile.close()
+
 
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
@@ -117,12 +126,29 @@ class SiFT_MTP:
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
 
+		# TODO: check sequence number
+
+		# decrypt and verify message
+		print("Decryption and authentication tag verification is attempted...")
+		nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
+		GCM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
+		GCM.update(msg_hdr)
+		try:
+		    decrypted_payload = GCM.decrypt_and_verify(msg_body, msg_mac)
+		except Exception as e:
+			print("Error: Operation failed!")
+			print("Processing completed.")
+			sys.exit(1)
+		print("Operation was successful: message is intact, content is decrypted.")
+
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
 			print('BDY (' + str(len(msg_body)) + '): ')
 			print(msg_body.hex())
+			print('DEC (' + str(len(decrypted_payload)) + '): ')
+			print(decrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
 			print('------------------------------------------')
@@ -130,9 +156,7 @@ class SiFT_MTP:
 
 		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
-		
-		# TODO: implement MAC verification
-		
+				
 		return parsed_msg_hdr['typ'], msg_body
 
 
@@ -164,6 +188,8 @@ class SiFT_MTP:
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_hdr_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
+		# TODO: update sequence number
+
 		# encrypt payload and get MAC with AES in GCM mode
 		nonce = msg_hdr_sqn + msg_hdr_rnd
 		GSM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
@@ -174,7 +200,9 @@ class SiFT_MTP:
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-			print('BDY (' + str(len(encrypted_payload)) + '): ')
+			print('BDY (' + str(len(msg_payload)) + '): ')
+			print(msg_payload.hex())
+			print('ENC (' + str(len(encrypted_payload)) + '): ')
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
