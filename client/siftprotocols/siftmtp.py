@@ -94,7 +94,6 @@ class SiFT_MTP:
 		#sqn = int(sqn, base=10)
 		ifile.close()
 
-
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
 		except SiFT_MTP_Error as e:
@@ -157,7 +156,7 @@ class SiFT_MTP:
 		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 				
-		return parsed_msg_hdr['typ'], msg_body
+		return parsed_msg_hdr['typ'], decrypted_payload
 
 
 	# sends all bytes provided via the peer socket
