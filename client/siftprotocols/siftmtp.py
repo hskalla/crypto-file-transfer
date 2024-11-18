@@ -135,9 +135,14 @@ class SiFT_MTP:
 
 			# TODO: any other tasks done when starting a session
 
-		# TODO: check sequence number
+		# check sequence number
+		if int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big') <= rcvsqn:
+			raise SiFT_MTP_Error('Invalid sequence number')
+		else:
+			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
+		
 
-		# write to file # TODO: update rcvsqn number with latest recieved num
+		# write to file
 		state =  "key: " + key.hex() + '\n'
 		state += "sndsqn: " + str(sndsqn) + '\n'
 		state += "rcvsqn: " + str(rcvsqn)
@@ -248,5 +253,3 @@ class SiFT_MTP:
 			
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
-
-
