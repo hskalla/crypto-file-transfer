@@ -84,14 +84,17 @@ class SiFT_MTP:
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
 
-		# read state file: key, sqn
+		# read state file: key, sndsqn, rcvsqn
 		ifile = open(self.statefile, 'rt')
 		line = ifile.readline()
-		enckey = line[len("key: "):len("key: ")+32]
-		enckey = bytes.fromhex(enckey)
-		#line = ifile.readline()
-		#sqn = line[len("sqn: "):]
-		#sqn = int(sqn, base=10)
+		key = line[len("key: "):len("key: ")+32]
+		key = bytes.fromhex(key)
+		line = ifile.readline()
+		sndsqn = line[len("sndsqn: "):]
+		sndsqn = int(sndsqn, base=10)
+		line = ifile.readline()
+		rcvsqn = line[len("rcvsqn: ")]
+		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
 
 		try:
@@ -125,12 +128,26 @@ class SiFT_MTP:
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
 
+		# special case for login request
+		if parsed_msg_hdr['typ'] == bytes.fromhex('0000'):
+			sndsqn = 0
+			rcvsqn = 0
+
+			# TODO: any other tasks done when starting a session
+
 		# TODO: check sequence number
+
+		# write to file # TODO: update rcvsqn number with latest recieved num
+		state =  "key: " + key.hex() + '\n'
+		state += "sndsqn: " + str(sndsqn) + '\n'
+		state += "rcvsqn: " + str(rcvsqn)
+		with open(self.statefile, 'wt') as sf:
+			sf.write(state)
 
 		# decrypt and verify message
 		print("Decryption and authentication tag verification is attempted...")
 		nonce = parsed_msg_hdr['sqn'] + parsed_msg_hdr['rnd']
-		GCM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
+		GCM = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
 		GCM.update(msg_hdr)
 		try:
 		    decrypted_payload = GCM.decrypt_and_verify(msg_body, msg_mac)
@@ -170,20 +187,30 @@ class SiFT_MTP:
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
 		
-		# read state file: key, sqn
+		# read state file: key, sndsqn, rcvsqn
 		ifile = open(self.statefile, 'rt')
 		line = ifile.readline()
-		enckey = line[len("key: "):len("key: ")+32]
-		enckey = bytes.fromhex(enckey)
+		key = line[len("key: "):len("key: ")+32]
+		key = bytes.fromhex(key)
 		line = ifile.readline()
-		sqn = line[len("sqn: "):]
-		sqn = int(sqn, base=10)
+		sndsqn = line[len("sndsqn: "):]
+		sndsqn = int(sndsqn, base=10) + 1
+		line = ifile.readline()
+		rcvsqn = line[len("rcvsqn: ")]
+		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
+
+		# special case for login request
+		if msg_type == bytes.fromhex('0000'):
+			sndsqn = 1
+			rcvsqn = 0
+
+			# TODO: send new key, do everything to start a session
 
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr_sqn = sqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
+		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_hdr_sqn + msg_hdr_rnd + self.msg_hdr_rsv
 
@@ -191,7 +218,7 @@ class SiFT_MTP:
 
 		# encrypt payload and get MAC with AES in GCM mode
 		nonce = msg_hdr_sqn + msg_hdr_rnd
-		GSM = AES.new(enckey, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
+		GSM = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.size_msg_mac)
 		GSM.update(msg_hdr)
 		encrypted_payload, msg_mac = GSM.encrypt_and_digest(msg_payload)
 
@@ -211,6 +238,14 @@ class SiFT_MTP:
 		# try to send
 		try:
 			self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
+
+			# if sent successfully, update sqn number
+			state =  "key: " + key.hex() + '\n'
+			state += "sndsqn: " + str(sndsqn) + '\n'
+			state += "rcvsqn: " + str(rcvsqn)
+			with open(self.statefile, 'wt') as sf:
+				sf.write(state)
+			
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
