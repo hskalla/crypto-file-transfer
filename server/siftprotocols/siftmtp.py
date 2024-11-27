@@ -32,6 +32,9 @@ class SiFT_MTP:
 		# size of the computed mac value (in bytes)
 		self.size_msg_mac = 12
 
+		# size of the computed mac value (in bytes)
+		self.size_msg_key = 32
+
 		self.type_login_req =    b'\x00\x00'
 		self.type_login_res =    b'\x00\x10'
 		self.type_command_req =  b'\x01\x00'
@@ -42,7 +45,7 @@ class SiFT_MTP:
 		self.type_dnload_req =   b'\x03\x00'
 		self.type_dnload_res_0 = b'\x03\x10'
 		self.type_dnload_res_1 = b'\x03\x11'
-		self.msg_types = (self.type_login_req, self.type_login_res, 
+		self.msg_types = (self.type_login_req, self.type_login_res,
 						  self.type_command_req, self.type_command_res,
 						  self.type_upload_req_0, self.type_upload_req_1, self.type_upload_res,
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
@@ -55,7 +58,7 @@ class SiFT_MTP:
 	def parse_msg_header(self, msg_hdr):
 
 		parsed_msg_hdr, i = {}, 0
-		parsed_msg_hdr['ver'], i = msg_hdr[i:i+self.size_msg_hdr_ver], i+self.size_msg_hdr_ver 
+		parsed_msg_hdr['ver'], i = msg_hdr[i:i+self.size_msg_hdr_ver], i+self.size_msg_hdr_ver
 		parsed_msg_hdr['typ'], i = msg_hdr[i:i+self.size_msg_hdr_typ], i+self.size_msg_hdr_typ
 		parsed_msg_hdr['len'], i = msg_hdr[i:i+self.size_msg_hdr_len], i+self.size_msg_hdr_len
 		parsed_msg_hdr['sqn'], i = msg_hdr[i:i+self.size_msg_hdr_sqn], i+self.size_msg_hdr_sqn
@@ -74,7 +77,7 @@ class SiFT_MTP:
 				chunk = self.peer_socket.recv(n-bytes_count)
 			except:
 				raise SiFT_MTP_Error('Unable to receive via peer socket')
-			if not chunk: 
+			if not chunk:
 				raise SiFT_MTP_Error('Connection with peer is broken')
 			bytes_received += chunk
 			bytes_count += len(chunk)
@@ -102,9 +105,9 @@ class SiFT_MTP:
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message header --> ' + e.err_msg)
 
-		if len(msg_hdr) != self.size_msg_hdr: 
+		if len(msg_hdr) != self.size_msg_hdr:
 			raise SiFT_MTP_Error('Incomplete message header received')
-		
+
 		parsed_msg_hdr = self.parse_msg_header(msg_hdr)
 
 		if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
@@ -120,14 +123,22 @@ class SiFT_MTP:
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 
 		try:
-			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac)
+			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - self.size_msg_key)
+			print("body "+msg_body.hex())
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
-		
+
 		try:
 			msg_mac = self.receive_bytes(self.size_msg_mac)
+			print("mac "+msg_mac.hex())
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
+
+		try:
+			msg_key = self.receive_bytes(self.size_msg_key)
+			print("key "+msg_key.hex())
+		except SiFT_MTP_Error as e:
+			raise SiFT_MTP_Error('Unable to receive message KEY --> ' + e.err_msg)
 
 		# special case for login request
 		if parsed_msg_hdr['typ'] == bytes.fromhex('0000'):
@@ -141,7 +152,7 @@ class SiFT_MTP:
 			raise SiFT_MTP_Error('Invalid sequence number')
 		else:
 			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
-		
+
 
 		# write to file
 		state =  "key: " + key.hex() + '\n'
@@ -163,7 +174,7 @@ class SiFT_MTP:
 			sys.exit(1)
 		print("Operation was successful: message is intact, content is decrypted.")
 
-		# DEBUG 
+		# DEBUG
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
@@ -173,12 +184,15 @@ class SiFT_MTP:
 			print(decrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
+			if msg_key != bytes.fromhex(''):
+				print('KEY (' + str(len(msg_key)) + '): ')
+				print(msg_key.hex())
 			print('------------------------------------------')
-		# DEBUG 
+		# DEBUG
 
-		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac: 
+		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - self.size_msg_key- self.size_msg_mac:
 			raise SiFT_MTP_Error('Incomplete message body reveived')
-				
+
 		return parsed_msg_hdr['typ'], decrypted_payload
 
 
@@ -192,7 +206,7 @@ class SiFT_MTP:
 
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
-		
+
 		# read state file: key, sndsqn, rcvsqn
 		ifile = open(self.statefile, 'rt')
 		line = ifile.readline()
@@ -218,6 +232,8 @@ class SiFT_MTP:
 
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
+		if (msg_type == bytes.fromhex('0000')):
+			msg_size += self.size_msg_key
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
@@ -231,7 +247,7 @@ class SiFT_MTP:
 		GSM.update(msg_hdr)
 		encrypted_payload, msg_mac = GSM.encrypt_and_digest(msg_payload)
 
-		# DEBUG 
+		# DEBUG
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
@@ -245,7 +261,7 @@ class SiFT_MTP:
 				print('KEY (' + str(len(msg_key)) + '): ')
 				print(msg_key.hex())
 			print('------------------------------------------')
-		# DEBUG 
+		# DEBUG
 
 		# try to send
 		try:
@@ -257,6 +273,6 @@ class SiFT_MTP:
 			state += "rcvsqn: " + str(rcvsqn)
 			with open(self.statefile, 'wt') as sf:
 				sf.write(state)
-			
+
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
