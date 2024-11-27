@@ -99,6 +99,7 @@ class SiFT_MTP:
 
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
+			print("HDR AS READ: "+str(msg_hdr.hex()))
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message header --> ' + e.err_msg)
 
@@ -141,7 +142,6 @@ class SiFT_MTP:
 		else:
 			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
 		
-
 		# write to file
 		state =  "key: " + key.hex() + '\n'
 		state += "sndsqn: " + str(sndsqn) + '\n'
@@ -201,16 +201,22 @@ class SiFT_MTP:
 		sndsqn = line[len("sndsqn: "):]
 		sndsqn = int(sndsqn, base=10) + 1
 		line = ifile.readline()
-		rcvsqn = line[len("rcvsqn: ")]
+		rcvsqn = line[len("rcvsqn: "):]
 		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
 
 		# special case for login request
+		msg_key = b''
 		if msg_type == bytes.fromhex('0000'):
 			sndsqn = 1
 			rcvsqn = 0
 
-			# TODO: send new key, do everything to start a session
+			# generate new random AES key
+			# key = Crypto.Random.get_random_bytes(32)
+			# msg_key = key
+			msg_key = Crypto.Random.get_random_bytes(32)
+
+			# TODO: encrypt key with the public key of the server
 
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
@@ -237,12 +243,18 @@ class SiFT_MTP:
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
+			if msg_key != bytes.fromhex(''):
+				print('KEY (' + str(len(msg_key)) + '): ')
+				print(msg_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
+			if msg_type == bytes.fromhex('0000'):
+				self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
+			else:
+				self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
 
 			# if sent successfully, update sqn number
 			state =  "key: " + key.hex() + '\n'
@@ -253,5 +265,3 @@ class SiFT_MTP:
 			
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
-
-
