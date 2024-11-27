@@ -32,8 +32,8 @@ class SiFT_MTP:
 		# size of the computed mac value (in bytes)
 		self.size_msg_mac = 12
 
-		# size of the computed mac value (in bytes)
-		self.size_msg_key = 32
+		# size of the half encrypted temporary key (in bytes)
+		self.size_msg_key = 16
 
 		self.type_login_req =    b'\x00\x00'
 		self.type_login_res =    b'\x00\x10'
@@ -75,6 +75,7 @@ class SiFT_MTP:
 		while bytes_count < n:
 			try:
 				chunk = self.peer_socket.recv(n-bytes_count)
+
 			except:
 				raise SiFT_MTP_Error('Unable to receive via peer socket')
 			if not chunk:
@@ -102,6 +103,7 @@ class SiFT_MTP:
 
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
+			print("header "+msg_hdr.hex())
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message header --> ' + e.err_msg)
 
@@ -121,9 +123,13 @@ class SiFT_MTP:
 			raise SiFT_MTP_Error('Invalid rsv field found in message header')
 
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
+		print("len "+str(msg_len))
 
 		try:
-			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - self.size_msg_key)
+			if (parsed_msg_hdr['typ'] == bytes.fromhex('0000') or parsed_msg_hdr['typ'] == bytes.fromhex('0010')):
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - self.size_msg_key)
+			else:
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac)
 			print("body "+msg_body.hex())
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
@@ -133,12 +139,17 @@ class SiFT_MTP:
 			print("mac "+msg_mac.hex())
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
+		msg_key = b''
 
-		try:
-			msg_key = self.receive_bytes(self.size_msg_key)
-			print("key "+msg_key.hex())
-		except SiFT_MTP_Error as e:
-			raise SiFT_MTP_Error('Unable to receive message KEY --> ' + e.err_msg)
+		print("type"+type(parsed_msg_hdr['typ']).__name__)
+		print((parsed_msg_hdr['typ']))
+		if (parsed_msg_hdr['typ'] == bytes.fromhex('0000') or parsed_msg_hdr['typ'] == bytes.fromhex('0010')):
+			try:
+				print("attempting to assign message key")
+				msg_key = self.receive_bytes(self.size_msg_key)
+				print("key "+msg_key.hex())
+			except SiFT_MTP_Error as e:
+				raise SiFT_MTP_Error('Unable to receive message KEY --> ' + e.err_msg)
 
 		# special case for login request
 		if parsed_msg_hdr['typ'] == bytes.fromhex('0000'):
@@ -190,8 +201,12 @@ class SiFT_MTP:
 			print('------------------------------------------')
 		# DEBUG
 
-		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - self.size_msg_key- self.size_msg_mac:
-			raise SiFT_MTP_Error('Incomplete message body reveived')
+		if (parsed_msg_hdr['typ'] == bytes.fromhex('0000') or parsed_msg_hdr['typ'] == bytes.fromhex('0010')):
+			if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac- self.size_msg_key:
+				raise SiFT_MTP_Error('Incomplete message body reveived')
+		else:
+			if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac:
+				raise SiFT_MTP_Error('Incomplete message body reveived')
 
 		return parsed_msg_hdr['typ'], decrypted_payload
 
@@ -220,19 +235,22 @@ class SiFT_MTP:
 		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
 
+
 		# special case for login request
 		msg_key = b''
 		if msg_type == bytes.fromhex('0000'):
 			sndsqn = 1
 			rcvsqn = 0
+			msg_key = Crypto.Random.get_random_bytes(16)
 
 			# TODO: send new key, do everything to start a session
+		if msg_type == bytes.fromhex('0010'):
+			msg_key =  Crypto.Random.get_random_bytes(16)
 
-			msg_key = Crypto.Random.get_random_bytes(32)
 
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
-		if (msg_type == bytes.fromhex('0000')):
+		if (msg_type == bytes.fromhex('0000') or msg_type == bytes.fromhex('0010')):
 			msg_size += self.size_msg_key
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
