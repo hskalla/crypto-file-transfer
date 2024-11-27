@@ -108,6 +108,7 @@ class SiFT_MTP:
 		parsed_msg_hdr = self.parse_msg_header(msg_hdr)
 
 		if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
+			print("wrong version number found, version number read is: "+parsed_msg_hdr['ver'].hex())
 			raise SiFT_MTP_Error('Unsupported version found in message header')
 
 		if parsed_msg_hdr['typ'] not in self.msg_types:
@@ -206,11 +207,14 @@ class SiFT_MTP:
 		ifile.close()
 
 		# special case for login request
+		msg_key = b''
 		if msg_type == bytes.fromhex('0000'):
 			sndsqn = 1
 			rcvsqn = 0
 
 			# TODO: send new key, do everything to start a session
+
+			msg_key = Crypto.Random.get_random_bytes(32)
 
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
@@ -237,12 +241,15 @@ class SiFT_MTP:
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
+			if msg_key != bytes.fromhex(''):
+				print('KEY (' + str(len(msg_key)) + '): ')
+				print(msg_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
+			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + msg_key)
 
 			# if sent successfully, update sqn number
 			state =  "key: " + key.hex() + '\n'
