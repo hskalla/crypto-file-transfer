@@ -29,7 +29,8 @@ class SiFT_MTP:
 		self.size_msg_hdr_rnd = 6
 		self.size_msg_hdr_rsv = 2
 
-		# size of the computed mac value (in bytes)
+		# size of the encrypted key and computed mac value (in bytes)
+		self.size_enc_key = 32
 		self.size_msg_mac = 12
 
 		self.type_login_req =    b'\x00\x00'
@@ -118,8 +119,17 @@ class SiFT_MTP:
 
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 
+		# special case for login request
+		if parsed_msg_hdr['typ'] == self.type_login_req:
+			sndsqn = 0
+			rcvsqn = 0
+
+			size_msg_key = self.size_enc_key
+		else:
+			size_msg_key = 0
+
 		try:
-			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac)
+			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 		
@@ -127,13 +137,12 @@ class SiFT_MTP:
 			msg_mac = self.receive_bytes(self.size_msg_mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
-
-		# special case for login request
-		if parsed_msg_hdr['typ'] == bytes.fromhex('0000'):
-			sndsqn = 0
-			rcvsqn = 0
-
-			# TODO: any other tasks done when starting a session
+		
+		# recieving enc key
+		try:
+			msg_key = self.receive_bytes(size_msg_key)
+		except SiFt_MTP_Error as e:
+			raise SiFt_MTP_Error('Unable to recieve key in logic req --> ' + e.err_msg)
 
 		# check sequence number
 		if int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big') <= rcvsqn:
@@ -141,7 +150,6 @@ class SiFT_MTP:
 		else:
 			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
 		
-
 		# write to file
 		state =  "key: " + key.hex() + '\n'
 		state += "sndsqn: " + str(sndsqn) + '\n'
@@ -172,10 +180,13 @@ class SiFT_MTP:
 			print(decrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
+			if size_msg_key > 0:
+				print('KEY (' + str(size_msg_key) + '): ')
+				print(msg_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
-		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac: 
+		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 				
 		return parsed_msg_hdr['typ'], decrypted_payload
@@ -206,20 +217,24 @@ class SiFT_MTP:
 		ifile.close()
 
 		# special case for login request
-		if msg_type == bytes.fromhex('0000'):
+		if msg_type == self.type_login_req:
+			print('message is a login req')
 			sndsqn = 1
 			rcvsqn = 0
 
-			# TODO: send new key, do everything to start a session
-
+			# if this is a login request, size_msg_key is 32, otherwise, its 0
+			size_msg_key = self.size_enc_key
+			msg_key = Crypto.Random.get_random_bytes(self.size_enc_key)
+		else:
+			size_msg_key = 0
+			msg_key = b''
+	
 		# build message header
-		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac
+		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac + size_msg_key
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big') # TODO: implement sequence numbers
+		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big')
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_hdr_sqn + msg_hdr_rnd + self.msg_hdr_rsv
-
-		# TODO: update sequence number
 
 		# encrypt payload and get MAC with AES in GCM mode
 		nonce = msg_hdr_sqn + msg_hdr_rnd
@@ -237,12 +252,15 @@ class SiFT_MTP:
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
+			if size_msg_key > 0:
+				print('KEY (' + str(size_msg_key) + '): ')
+				print(msg_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + encrypted_payload + msg_mac)
+			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + msg_key)
 
 			# if sent successfully, update sqn number
 			state =  "key: " + key.hex() + '\n'
