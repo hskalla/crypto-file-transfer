@@ -20,6 +20,7 @@ class SiFT_LOGIN:
         self.delimiter = '\n'
         self.coding = 'utf-8'
         self.random_size = 16
+        self.statefile = "state.txt"
         # --------- STATE ------------
         self.mtp = mtp
         self.server_users = None 
@@ -143,6 +144,27 @@ class SiFT_LOGIN:
             print('User ' + login_req_struct['username'] + ' logged in')
         # DEBUG 
 
+        # compute and write new key
+        key = login_req_struct['random'] + login_res_struct['random']
+
+        # read state file: key, sndsqn, rcvsqn
+        ifile = open(self.statefile, 'rt')
+        line = ifile.readline()
+        line = ifile.readline()
+        sndsqn = line[len("sndsqn: "):]
+        sndsqn = int(sndsqn, base=10)
+        line = ifile.readline()
+        rcvsqn = line[len("rcvsqn: ")]
+        rcvsqn = int(rcvsqn, base=10)
+        ifile.close()
+
+        # store seq number, key, by writing to file
+        state =  "key: " + key.hex() + '\n'
+        state += "sndsqn: " + str(sndsqn) + '\n'
+        state += "rcvsqn: " + str(rcvsqn)
+        with open(self.statefile, 'wt') as sf:
+            sf.write(state)
+
         return login_req_struct['username']
 
 
@@ -194,7 +216,28 @@ class SiFT_LOGIN:
         # processing login response
         login_res_struct = self.parse_login_res(msg_payload)
 
-        # checking request_hash receiveid in the login response
+        # checking request_hash received in the login response
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
+        
+        # compute and write new key
+        key = login_req_struct['random'] + login_res_struct['random']
+
+        # read state file: key, sndsqn, rcvsqn
+        ifile = open(self.statefile, 'rt')
+        line = ifile.readline()
+        line = ifile.readline()
+        sndsqn = line[len("sndsqn: "):]
+        sndsqn = int(sndsqn, base=10)
+        line = ifile.readline()
+        rcvsqn = line[len("rcvsqn: ")]
+        rcvsqn = int(rcvsqn, base=10)
+        ifile.close()
+
+        # store seq number, key, by writing to file
+        state =  "key: " + key.hex() + '\n'
+        state += "sndsqn: " + str(sndsqn) + '\n'
+        state += "rcvsqn: " + str(rcvsqn)
+        with open(self.statefile, 'wt') as sf:
+            sf.write(state)
 
