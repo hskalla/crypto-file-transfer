@@ -4,6 +4,7 @@ import time
 from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
+import Crypto.Random
 
 
 class SiFT_LOGIN_Error(Exception):
@@ -18,6 +19,7 @@ class SiFT_LOGIN:
         # --------- CONSTANTS ------------
         self.delimiter = '\n'
         self.coding = 'utf-8'
+        self.random_size = 16
         # --------- STATE ------------
         self.mtp = mtp
         self.server_users = None 
@@ -31,8 +33,10 @@ class SiFT_LOGIN:
     # builds a login request from a dictionary
     def build_login_req(self, login_req_struct):
 
-        login_req_str = login_req_struct['username']
+        login_req_str = str(login_req_struct['timestamp'])
+        login_req_str += self.delimiter + login_req_struct['username'] 
         login_req_str += self.delimiter + login_req_struct['password'] 
+        login_req_str += self.delimiter + login_req_struct['random'].hex()
         return login_req_str.encode(self.coding)
 
 
@@ -41,8 +45,10 @@ class SiFT_LOGIN:
 
         login_req_fields = login_req.decode(self.coding).split(self.delimiter)
         login_req_struct = {}
-        login_req_struct['username'] = login_req_fields[0]
-        login_req_struct['password'] = login_req_fields[1]
+        login_req_struct['timestamp'] = int(login_req_fields[0])
+        login_req_struct['username'] = login_req_fields[1]
+        login_req_struct['password'] = login_req_fields[2]
+        login_req_struct['random'] = bytes.fromhex(login_req_fields[3])
         return login_req_struct
 
 
@@ -50,6 +56,7 @@ class SiFT_LOGIN:
     def build_login_res(self, login_res_struct):
 
         login_res_str = login_res_struct['request_hash'].hex() 
+        login_res_str += self.delimiter + login_res_struct['random'].hex()
         return login_res_str.encode(self.coding)
 
 
@@ -58,6 +65,7 @@ class SiFT_LOGIN:
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
+        login_res_struct['random'] = bytes.fromhex(login_res_fields[1])
         return login_res_struct
 
 
@@ -105,9 +113,16 @@ class SiFT_LOGIN:
         else:
             raise SiFT_LOGIN_Error('Unkown user attempted to log in')
 
+        # check timestamp validity
+        current_time = time.time_ns()
+        timestamp = login_req_struct['timestamp']
+        if(abs(current_time - timestamp) > 1000000000):
+            raise SiFT_LOGIN_Error('Timestamp outside of accepted range')
+
         # building login response
         login_res_struct = {}
         login_res_struct['request_hash'] = request_hash
+        login_res_struct['random'] = Crypto.Random.get_random_bytes(self.random_size)
         msg_payload = self.build_login_res(login_res_struct)
 
         # DEBUG 
@@ -136,8 +151,10 @@ class SiFT_LOGIN:
 
         # building a login request
         login_req_struct = {}
+        login_req_struct['timestamp'] = time.time_ns()
         login_req_struct['username'] = username
         login_req_struct['password'] = password
+        login_req_struct['random'] = Crypto.Random.get_random_bytes(self.random_size)
         msg_payload = self.build_login_req(login_req_struct)
 
         # DEBUG 
