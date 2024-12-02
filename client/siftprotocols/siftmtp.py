@@ -30,7 +30,7 @@ class SiFT_MTP:
 		self.size_msg_hdr_rsv = 2
 
 		# size of the encrypted key and computed mac value (in bytes)
-		self.size_enc_key = 32
+		self.size_login_key = 32
 		self.size_msg_mac = 12
 
 		self.type_login_req =    b'\x00\x00'
@@ -98,6 +98,7 @@ class SiFT_MTP:
 		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
 
+		# read header bytes
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
 		except SiFT_MTP_Error as e:
@@ -106,6 +107,7 @@ class SiFT_MTP:
 		if len(msg_hdr) != self.size_msg_hdr: 
 			raise SiFT_MTP_Error('Incomplete message header received')
 		
+		# parse header and check for errors
 		parsed_msg_hdr = self.parse_msg_header(msg_hdr)
 
 		if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
@@ -121,33 +123,38 @@ class SiFT_MTP:
 
 		# special case for login request
 		if parsed_msg_hdr['typ'] == self.type_login_req:
+			# reset seq numbers
 			sndsqn = 0
 			rcvsqn = 0
 
-			size_msg_key = self.size_enc_key
+			# size_msg_key is set to the normal key exchange size
+			size_msg_key = self.size_login_key
 		else:
 			size_msg_key = 0
 
+		# read msg body bytes
 		try:
 			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 		
+		# read mac bytes
 		try:
 			msg_mac = self.receive_bytes(self.size_msg_mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message mac --> ' + e.err_msg)
 		
-		# recieving enc key
+		# read login key (for key exchange)
 		try:
 			msg_key = self.receive_bytes(size_msg_key)
 		except SiFt_MTP_Error as e:
 			raise SiFt_MTP_Error('Unable to recieve key in logic req --> ' + e.err_msg)
 
-		# check sequence number
+		# verify sequence number
 		if int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big') <= rcvsqn:
 			raise SiFT_MTP_Error('Invalid sequence number')
 		else:
+			# update sequence number
 			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
 		
 		# write to file
@@ -186,6 +193,7 @@ class SiFT_MTP:
 			print('------------------------------------------')
 		# DEBUG 
 
+		# verify for correct length of body
 		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 				
@@ -210,7 +218,7 @@ class SiFT_MTP:
 		key = bytes.fromhex(key)
 		line = ifile.readline()
 		sndsqn = line[len("sndsqn: "):]
-		sndsqn = int(sndsqn, base=10) + 1
+		sndsqn = int(sndsqn, base=10)
 		line = ifile.readline()
 		rcvsqn = line[len("rcvsqn: ")]
 		rcvsqn = int(rcvsqn, base=10)
@@ -218,17 +226,20 @@ class SiFT_MTP:
 
 		# special case for login request
 		if msg_type == self.type_login_req:
-			print('message is a login req')
-			sndsqn = 1
+			# reset sequence number
+			sndsqn = 0
 			rcvsqn = 0
 
 			# if this is a login request, size_msg_key is 32, otherwise, its 0
-			size_msg_key = self.size_enc_key
-			msg_key = Crypto.Random.get_random_bytes(self.size_enc_key)
+			size_msg_key = self.size_login_key
+			msg_key = Crypto.Random.get_random_bytes(self.size_login_key)
 		else:
 			size_msg_key = 0
 			msg_key = b''
 	
+		# update sequence number
+		sndsqn = sndsqn + 1
+
 		# build message header
 		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac + size_msg_key
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
@@ -262,7 +273,7 @@ class SiFT_MTP:
 		try:
 			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + msg_key)
 
-			# if sent successfully, update sqn number
+			# store seq number, key, by writing to file
 			state =  "key: " + key.hex() + '\n'
 			state += "sndsqn: " + str(sndsqn) + '\n'
 			state += "rcvsqn: " + str(rcvsqn)
