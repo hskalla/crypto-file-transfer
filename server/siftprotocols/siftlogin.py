@@ -21,7 +21,8 @@ class SiFT_LOGIN:
         self.delimiter = '\n'
         self.coding = 'utf-8'
         self.random_size = 16
-        self.statefile = "state.txt"
+        self.statefile = "state.txt" # TODO: delete statefile references
+        self.file_sym_key = "./data/symkey.pem"
         # --------- STATE ------------
         self.mtp = mtp
         self.server_users = None 
@@ -149,6 +150,10 @@ class SiFT_LOGIN:
         unsalted_key = login_req_struct['random'] + login_res_struct['random']
         key = HKDF(unsalted_key, 32, request_hash, SHA256)
 
+        # write key to pem file
+        with open(self.file_sym_key,'wb') as f:
+            f.write(key)
+
         # read state file: key, sndsqn, rcvsqn
         ifile = open(self.statefile, 'rt')
         line = ifile.readline()
@@ -225,6 +230,10 @@ class SiFT_LOGIN:
         # compute and write new key
         unsalted_key = login_req_struct['random'] + login_res_struct['random']
         key = HKDF(unsalted_key, 32, request_hash, SHA256)
+
+        # write key to pem file
+        with open(self.file_sym_key,'wb') as f:
+            f.write(key)
 
         # read state file: key, sndsqn, rcvsqn
         ifile = open(self.statefile, 'rt')

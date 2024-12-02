@@ -53,8 +53,9 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
-		self.statefile = "state.txt"
-		self.rsa_key_file = "rsa_keys.txt"
+		self.file_state = "state.txt"
+		self.file_public_key = "./data/pubkey.pem"
+		self.file_private_key = "./data/prvkey.pem"
 
 
 	# parses a message header and returns a dictionary containing the header fields
@@ -91,7 +92,7 @@ class SiFT_MTP:
 	def receive_msg(self):
 
 		# read state file: key, sndsqn, rcvsqn
-		ifile = open(self.statefile, 'rt')
+		ifile = open(self.file_state, 'rt')
 		line = ifile.readline()
 		key = line[len("key: "):len("key: ")+32]
 		key = bytes.fromhex(key)
@@ -133,7 +134,7 @@ class SiFT_MTP:
 			rcvsqn = 0
 
 			# read the server's private key from the file
-			with open("prvkey.pem",'rb') as f:
+			with open(self.file_private_key,'rb') as f:
 				prvkeystr = f.read()
 			try:
 				private_key = RSA.import_key(prvkeystr)
@@ -180,7 +181,7 @@ class SiFT_MTP:
 		state =  "key: " + key.hex() + '\n'
 		state += "sndsqn: " + str(sndsqn) + '\n'
 		state += "rcvsqn: " + str(rcvsqn)
-		with open(self.statefile, 'wt') as sf:
+		with open(self.file_state, 'wt') as sf:
 			sf.write(state)
 
 		# decrypt and verify message
@@ -231,7 +232,7 @@ class SiFT_MTP:
 	def send_msg(self, msg_type, msg_payload):
 		
 		# read state file: key, sndsqn, rcvsqn
-		ifile = open(self.statefile, 'rt')
+		ifile = open(self.file_state, 'rt')
 		line = ifile.readline()
 		key = line[len("key: "):len("key: ")+32]
 		key = bytes.fromhex(key)
@@ -250,7 +251,7 @@ class SiFT_MTP:
 			rcvsqn = 0
 			
 			# read the server's public key from the file
-			with open("pubkey.pem", 'rb') as f:
+			with open(self.file_public_key, 'rb') as f:
 				pubkeystr = f.read()
 			try:
 				public_key = RSA.import_key(pubkeystr)
@@ -312,7 +313,7 @@ class SiFT_MTP:
 			state =  "key: " + key.hex() + '\n'
 			state += "sndsqn: " + str(sndsqn) + '\n'
 			state += "rcvsqn: " + str(rcvsqn)
-			with open(self.statefile, 'wt') as sf:
+			with open(self.file_state, 'wt') as sf:
 				sf.write(state)
 			
 		except SiFT_MTP_Error as e:
