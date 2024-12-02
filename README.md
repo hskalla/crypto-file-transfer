@@ -1,4 +1,5 @@
-# Simple File Transfer v0.5
+<details>
+<summary><h1>Simple File Transfer v0.5</h1></summary>
 
 This document specifies version 0.5 of the Simple File Transfer (SiFT) protocol. SiFT can be used by a client to send file commands to a server, which executes those commands. SiFT supports the following 7 commands:
 
@@ -456,7 +457,10 @@ eam, believes the group only cooperates with the creators of Flame and Stuxnet f
 
 And with this, the download is complete.
 
-# Simple File Transfer v1.0
+</details>
+
+<details>
+<summary><h1>Simple File Transfer v1.0</h1></summary>
 This document specifies version 1.0 of the Simple File Transfer (SiFT) protocol. SiFT can be used by a client to send file commands to a server, which executes those commands. SiFT supports the following 7 commands:
 
 - __pwd__ --> Print current working directory: Returns to the client the name of the current working directory on the server.
@@ -1132,3 +1136,4 @@ EPD (302):  1d1d2f01bd7fc383279b4ff7217b2c49
             92b2d553db838f4815d2a7db2919
 MAC (12):   ab4eee0e58844ee727cda6b3
 ```
+</details>
