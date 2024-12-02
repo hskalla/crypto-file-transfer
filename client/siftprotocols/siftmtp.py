@@ -4,6 +4,9 @@ import sys, getopt
 import socket
 import Crypto.Random
 from Crypto.Cipher import AES
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
+
 
 class SiFT_MTP_Error(Exception):
 
@@ -30,7 +33,8 @@ class SiFT_MTP:
 		self.size_msg_hdr_rsv = 2
 
 		# size of the encrypted key and computed mac value (in bytes)
-		self.size_login_key = 32
+		self.size_temp_key = 32
+		self.size_enc_temp_key = 256
 		self.size_msg_mac = 12
 
 		self.type_login_req =    b'\x00\x00'
@@ -50,6 +54,7 @@ class SiFT_MTP:
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
 		self.statefile = "state.txt"
+		self.rsa_key_file = "rsa_keys.txt"
 
 
 	# parses a message header and returns a dictionary containing the header fields
@@ -127,14 +132,23 @@ class SiFT_MTP:
 			sndsqn = 0
 			rcvsqn = 0
 
-			# size_msg_key is set to the normal key exchange size
-			size_msg_key = self.size_login_key
+			# read the server's private key from the file
+			with open("prvkey.pem",'rb') as f:
+				prvkeystr = f.read()
+			try:
+				private_key = RSA.import_key(prvkeystr)
+			except ValueError:
+				print("Error: Cannot import private key from file.")
+				sys.exit(1)
+
+			# enc temp key size is set to the normal key exchange size
+			size_enc_temp_key_actual = self.size_enc_temp_key
 		else:
-			size_msg_key = 0
+			size_enc_temp_key_actual = 0
 
 		# read msg body bytes
 		try:
-			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key)
+			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_mac - size_enc_temp_key_actual)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 		
@@ -146,9 +160,14 @@ class SiFT_MTP:
 		
 		# read login key (for key exchange)
 		try:
-			msg_key = self.receive_bytes(size_msg_key)
+			enc_temp_key = self.receive_bytes(size_enc_temp_key_actual)
 		except SiFt_MTP_Error as e:
 			raise SiFt_MTP_Error('Unable to recieve key in logic req --> ' + e.err_msg)
+
+		# special case for login request
+		if parsed_msg_hdr['typ'] == self.type_login_req:
+			rsa = PKCS1_OAEP.new(private_key)
+			key = rsa.decrypt(enc_temp_key)
 
 		# verify sequence number
 		if int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big') <= rcvsqn:
@@ -187,14 +206,14 @@ class SiFT_MTP:
 			print(decrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
-			if size_msg_key > 0:
-				print('KEY (' + str(size_msg_key) + '): ')
-				print(msg_key.hex())
+			if size_enc_temp_key_actual > 0:
+				print('KEY (' + str(size_enc_temp_key_actual) + '): ')
+				print(enc_temp_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
 		# verify for correct length of body
-		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - size_msg_key: 
+		if len(msg_body) != msg_len - self.size_msg_hdr - self.size_msg_mac - size_enc_temp_key_actual: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 				
 		return parsed_msg_hdr['typ'], decrypted_payload
@@ -229,19 +248,35 @@ class SiFT_MTP:
 			# reset sequence number
 			sndsqn = 0
 			rcvsqn = 0
+			
+			# read the server's public key from the file
+			with open("pubkey.pem", 'rb') as f:
+				pubkeystr = f.read()
+			try:
+				public_key = RSA.import_key(pubkeystr)
+			except ValueError:
+				print("Error: Cannot import public key from file.")
+				sys.exit(1)
 
-			# if this is a login request, size_msg_key is 32, otherwise, its 0
-			size_msg_key = self.size_login_key
-			msg_key = Crypto.Random.get_random_bytes(self.size_login_key)
+			# if this is a login request, enc temp key size is 256, otherwise, its 0
+			size_enc_temp_key_actual = self.size_enc_temp_key
+			temp_key = Crypto.Random.get_random_bytes(self.size_temp_key)
+
+			# if this is a login request, we use the temp key for encryption
+			key = temp_key
+
+			# encrypt the msg key
+			rsa = PKCS1_OAEP.new(public_key)
+			enc_temp_key = rsa.encrypt(temp_key)
 		else:
-			size_msg_key = 0
-			msg_key = b''
+			size_enc_temp_key_actual = 0
+			enc_temp_key = b''
 	
 		# update sequence number
 		sndsqn = sndsqn + 1
 
 		# build message header
-		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac + size_msg_key
+		msg_size = self.size_msg_hdr + len(msg_payload) + self.size_msg_mac + size_enc_temp_key_actual
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		msg_hdr_sqn = sndsqn.to_bytes(2, byteorder='big')
 		msg_hdr_rnd = Crypto.Random.get_random_bytes(6)
@@ -263,15 +298,15 @@ class SiFT_MTP:
 			print(encrypted_payload.hex())
 			print('MAC (' + str(len(msg_mac)) + '): ')
 			print(msg_mac.hex())
-			if size_msg_key > 0:
-				print('KEY (' + str(size_msg_key) + '): ')
-				print(msg_key.hex())
+			if size_enc_temp_key_actual > 0:
+				print('KEY (' + str(size_enc_temp_key_actual) + '): ')
+				print(enc_temp_key.hex())
 			print('------------------------------------------')
 		# DEBUG 
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + msg_key)
+			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + enc_temp_key)
 
 			# store seq number, key, by writing to file
 			state =  "key: " + key.hex() + '\n'

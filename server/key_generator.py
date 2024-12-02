@@ -1,10 +1,12 @@
 from Crypto.PublicKey import RSA
 
-key = RSA.generate(2048)
-private_key = key.export_key()
+key_pair = RSA.generate(2048)
 
-public_key = key.publickey().export_key()
+public_key = key_pair.public_key()
+private_key = key_pair
 
+with open("pubkey.pem",'wb') as f:
+    f.write(public_key.export_key(format='PEM'))
 
-with open("rsa_keys.txt", "wt") as f:
-    f.write("private key: "+private_key.hex() + '\npublic key: '+ public_key.hex())
+with open("prvkey.pem",'wb') as f:
+    f.write(private_key.export_key(format='PEM'))

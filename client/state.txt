@@ -1,3 +1,3 @@
-key: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-sndsqn: 6
-rcvsqn: 6
+key: f809c5183d3b0a85fda5e00f69c23c45
+sndsqn: 4
+rcvsqn: 4
