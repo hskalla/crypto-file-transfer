@@ -5,6 +5,7 @@ from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 import Crypto.Random
+from Crypto.Protocol.KDF import HKDF
 
 
 class SiFT_LOGIN_Error(Exception):
@@ -145,7 +146,8 @@ class SiFT_LOGIN:
         # DEBUG 
 
         # compute and write new key
-        key = login_req_struct['random'] + login_res_struct['random']
+        unsalted_key = login_req_struct['random'] + login_res_struct['random']
+        key = HKDF(unsalted_key, 32, request_hash, SHA256)
 
         # read state file: key, sndsqn, rcvsqn
         ifile = open(self.statefile, 'rt')
@@ -221,7 +223,8 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Verification of login response failed')
         
         # compute and write new key
-        key = login_req_struct['random'] + login_res_struct['random']
+        unsalted_key = login_req_struct['random'] + login_res_struct['random']
+        key = HKDF(unsalted_key, 32, request_hash, SHA256)
 
         # read state file: key, sndsqn, rcvsqn
         ifile = open(self.statefile, 'rt')
