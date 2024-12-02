@@ -1,3 +1,0 @@
-key: 7cdd72fc92cb71f29979f495d0b4f1f5
-sndsqn: 3
-rcvsqn: 3

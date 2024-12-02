@@ -21,7 +21,6 @@ class SiFT_LOGIN:
         self.delimiter = '\n'
         self.coding = 'utf-8'
         self.random_size = 16
-        self.statefile = "state.txt" # TODO: delete statefile references
         self.file_sym_key = "./data/symkey.pem"
         # --------- STATE ------------
         self.mtp = mtp
@@ -154,24 +153,6 @@ class SiFT_LOGIN:
         with open(self.file_sym_key,'wb') as f:
             f.write(key)
 
-        # read state file: key, sndsqn, rcvsqn
-        ifile = open(self.statefile, 'rt')
-        line = ifile.readline()
-        line = ifile.readline()
-        sndsqn = line[len("sndsqn: "):]
-        sndsqn = int(sndsqn, base=10)
-        line = ifile.readline()
-        rcvsqn = line[len("rcvsqn: ")]
-        rcvsqn = int(rcvsqn, base=10)
-        ifile.close()
-
-        # store seq number, key, by writing to file
-        state =  "key: " + key.hex() + '\n'
-        state += "sndsqn: " + str(sndsqn) + '\n'
-        state += "rcvsqn: " + str(rcvsqn)
-        with open(self.statefile, 'wt') as sf:
-            sf.write(state)
-
         return login_req_struct['username']
 
 
@@ -234,22 +215,4 @@ class SiFT_LOGIN:
         # write key to pem file
         with open(self.file_sym_key,'wb') as f:
             f.write(key)
-
-        # read state file: key, sndsqn, rcvsqn
-        ifile = open(self.statefile, 'rt')
-        line = ifile.readline()
-        line = ifile.readline()
-        sndsqn = line[len("sndsqn: "):]
-        sndsqn = int(sndsqn, base=10)
-        line = ifile.readline()
-        rcvsqn = line[len("rcvsqn: ")]
-        rcvsqn = int(rcvsqn, base=10)
-        ifile.close()
-
-        # store seq number, key, by writing to file
-        state =  "key: " + key.hex() + '\n'
-        state += "sndsqn: " + str(sndsqn) + '\n'
-        state += "rcvsqn: " + str(rcvsqn)
-        with open(self.statefile, 'wt') as sf:
-            sf.write(state)
 

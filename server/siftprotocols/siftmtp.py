@@ -53,7 +53,7 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
-		self.file_state = "state.txt"
+		self.file_sqn = "./data/sqn.txt"
 		self.file_sym_key = "./data/symkey.pem"
 		self.file_public_key = "./data/pubkey.pem"
 		self.file_private_key = "./data/prvkey.pem"
@@ -92,11 +92,8 @@ class SiFT_MTP:
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
 
-		# read state file: key, sndsqn, rcvsqn
-		ifile = open(self.file_state, 'rt')
-		line = ifile.readline()
-		key = line[len("key: "):len("key: ")+32]
-		key = bytes.fromhex(key)
+		# read sequence number
+		ifile = open(self.file_sqn, 'rt')
 		line = ifile.readline()
 		sndsqn = line[len("sndsqn: "):]
 		sndsqn = int(sndsqn, base=10)
@@ -104,6 +101,10 @@ class SiFT_MTP:
 		rcvsqn = line[len("rcvsqn: ")]
 		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
+
+		# read file for symmetric key
+		with open(self.file_sym_key,'rb') as f:
+			key = f.read()
 
 		# read header bytes
 		try:
@@ -171,6 +172,10 @@ class SiFT_MTP:
 			rsa = PKCS1_OAEP.new(private_key)
 			key = rsa.decrypt(enc_temp_key)
 
+			# store the temp key for later use
+			with open(self.file_sym_key,'wb') as f:
+				f.write(key)
+
 		# verify sequence number
 		if int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big') <= rcvsqn:
 			raise SiFT_MTP_Error('Invalid sequence number')
@@ -178,12 +183,11 @@ class SiFT_MTP:
 			# update sequence number
 			rcvsqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')
 		
-		# write to file
-		state =  "key: " + key.hex() + '\n'
-		state += "sndsqn: " + str(sndsqn) + '\n'
-		state += "rcvsqn: " + str(rcvsqn)
-		with open(self.file_state, 'wt') as sf:
-			sf.write(state)
+		# write seq to file
+		sqn_state = "sndsqn: " + str(sndsqn) + '\n'
+		sqn_state += "rcvsqn: " + str(rcvsqn)
+		with open(self.file_sqn, 'wt') as sf:
+			sf.write(sqn_state)
 
 		# decrypt and verify message
 		print("Decryption and authentication tag verification is attempted...")
@@ -232,11 +236,8 @@ class SiFT_MTP:
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
 		
-		# read state file: key, sndsqn, rcvsqn
-		ifile = open(self.file_state, 'rt')
-		line = ifile.readline()
-		key = line[len("key: "):len("key: ")+32]
-		key = bytes.fromhex(key)
+		# read sequence number
+		ifile = open(self.file_sqn, 'rt')
 		line = ifile.readline()
 		sndsqn = line[len("sndsqn: "):]
 		sndsqn = int(sndsqn, base=10)
@@ -244,6 +245,10 @@ class SiFT_MTP:
 		rcvsqn = line[len("rcvsqn: ")]
 		rcvsqn = int(rcvsqn, base=10)
 		ifile.close()
+
+		# read file for symmetric key
+		with open(self.file_sym_key,'rb') as f:
+			key = f.read()
 
 		# special case for login request
 		if msg_type == self.type_login_req:
@@ -266,6 +271,10 @@ class SiFT_MTP:
 
 			# if this is a login request, we use the temp key for encryption
 			key = temp_key
+
+			# store the temp key for use decrypting the login response
+			with open(self.file_sym_key,'wb') as f:
+				f.write(key)
 
 			# encrypt the msg key
 			rsa = PKCS1_OAEP.new(public_key)
@@ -310,12 +319,11 @@ class SiFT_MTP:
 		try:
 			self.send_bytes(msg_hdr + encrypted_payload + msg_mac + enc_temp_key)
 
-			# store seq number, key, by writing to file
-			state =  "key: " + key.hex() + '\n'
-			state += "sndsqn: " + str(sndsqn) + '\n'
-			state += "rcvsqn: " + str(rcvsqn)
-			with open(self.file_state, 'wt') as sf:
-				sf.write(state)
+			# write seq number to file
+			sqn_state = "sndsqn: " + str(sndsqn) + '\n'
+			sqn_state += "rcvsqn: " + str(rcvsqn)
+			with open(self.file_sqn, 'wt') as sf:
+				sf.write(sqn_state)
 			
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
