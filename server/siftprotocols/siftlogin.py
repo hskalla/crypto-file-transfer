@@ -118,7 +118,7 @@ class SiFT_LOGIN:
         # check timestamp validity
         current_time = time.time_ns()
         timestamp = login_req_struct['timestamp']
-        if(abs(current_time - timestamp) > 1000000000):
+        if(abs(current_time - timestamp) > 2000000000):
             raise SiFT_LOGIN_Error('Timestamp outside of accepted range')
 
         # building login response

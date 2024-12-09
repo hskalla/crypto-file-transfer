@@ -1,4 +1,4 @@
-#python3
+# python3
 
 import sys, os, socket, cmd, getpass
 from Crypto.Hash import SHA256
